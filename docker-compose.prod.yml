@@ -1,0 +1,78 @@
+# Production Docker Compose with Cloudflare Tunnel for AIOStreams
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: aiostreams-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-aiostreams_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:-aiostreams}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-aiostreams_user} -d ${DB_NAME:-aiostreams}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - aiostreams-network
+    # No ports exposed - internal only
+
+  aiostreams:
+    image: ghcr.io/viren070/aiostreams:latest
+    container_name: aiostreams
+    restart: unless-stopped
+    environment:
+      # Core settings
+      - ADDON_NAME=${ADDON_NAME:-AIOStreams}
+      - ADDON_ID=${ADDON_ID:-com.aiostreams.addon}
+      - PORT=3000
+      - SECRET_KEY=${SECRET_KEY}
+      - DATABASE_URI=postgresql://${DB_USER:-aiostreams_user}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-aiostreams}
+      # Optional addon password for extra protection
+      - ADDON_PASSWORD=${ADDON_PASSWORD:-}
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      # Rate limiting (disabled for self-hosted)
+      - DISABLE_RATE_LIMITS=${DISABLE_RATE_LIMITS:-true}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/v1/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+    networks:
+      - aiostreams-network
+    # No ports exposed - accessed through Cloudflare tunnel
+
+  # Cloudflare Tunnel for secure HTTPS access
+  # Configure tunnel at: https://one.dash.cloudflare.com/
+  # 1. Create tunnel in Zero Trust > Networks > Tunnels
+  # 2. Point tunnel to: http://aiostreams:3000
+  # 3. Set up Cloudflare Access for authentication (Zero Trust > Access > Applications)
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: aiostreams-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    depends_on:
+      aiostreams:
+        condition: service_healthy
+    networks:
+      - aiostreams-network
+
+networks:
+  aiostreams-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
