@@ -29,6 +29,7 @@ services:
       - ADDON_NAME=${ADDON_NAME:-AIOStreams}
       - ADDON_ID=${ADDON_ID:-com.aiostreams.addon}
       - PORT=3000
+      - BASE_URL=${BASE_URL}
       - SECRET_KEY=${SECRET_KEY}
       - DATABASE_URI=postgresql://${DB_USER:-aiostreams_user}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-aiostreams}
       # Optional addon password for extra protection
